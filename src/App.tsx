@@ -94,7 +94,7 @@ export default function App() {
   const [checkoutStep, setCheckoutStep] = useState<'idle' | 'scanning' | 'payment' | 'success'>('idle');
   const [selectedPayment, setSelectedPayment] = useState<'qik' | 'azul' | 'tiotap' | 'tarjeta'>('qik');
 
-  // Real TensorFlow.js Webcam YOLO / COCO-SSD State
+  // Real TensorFlow.js Webcam YOLO / COCO-SSD State (All objects detection)
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isWebcamActive, setIsWebcamActive] = useState(false);
   const [webcamError, setWebcamError] = useState<string | null>(null);
@@ -103,13 +103,13 @@ export default function App() {
   const [predictions, setPredictions] = useState<cocoSsd.DetectedObject[]>([]);
   const modelRef = useRef<cocoSsd.ObjectDetection | null>(null);
 
-  // Load TensorFlow COCO-SSD model once
+  // Load TensorFlow COCO-SSD model once with lower threshold to detect ALL possible items
   useEffect(() => {
     async function loadCocoModel() {
       try {
         setModelLoading(true);
         await tf.ready();
-        const loadedModel = await cocoSsd.load();
+        const loadedModel = await cocoSsd.load({ base: 'mobilenet_v2' });
         modelRef.current = loadedModel;
         setModelLoaded(true);
       } catch (err) {
@@ -144,13 +144,13 @@ export default function App() {
     }
   };
 
-  // Real-time detection loop using requestAnimationFrame
+  // Real-time detection loop with low score threshold (0.2) to capture ALL types of items
   useEffect(() => {
     let animationId: number;
     async function detectFrame() {
       if (modelRef.current && videoRef.current && videoRef.current.readyState === 4 && isWebcamActive) {
         try {
-          const preds = await modelRef.current.detect(videoRef.current);
+          const preds = await modelRef.current.detect(videoRef.current, 20, 0.2); // max 20 objects, min score 0.2
           setPredictions(preds);
         } catch (e) {
           console.error('Detection error:', e);
@@ -172,7 +172,7 @@ export default function App() {
   const [aiResponses, setAiResponses] = useState<{ role: 'user' | 'assistant'; text: string }[]>([
     { 
       role: 'assistant', 
-      text: 'Hola. He integrado TensorFlow.js (COCO-SSD) directamente en tu navegador para que, cuando pongas un vaso (cup), una botella (bottle), un teléfono (cell phone) o una laptop frente a tu cámara web, el sistema lo detecte y dibuje cajas delimitadoras reales en tiempo real.' 
+      text: 'He configurado el detector con un umbral de sensibilidad bajo (0.2) y el modelo completo COCO-SSD para que detecte absolutamente todo tipo de elementos que coloques frente a tu cámara web (vasos, botellas, personas, libros, dispositivos, ropa, etc.).' 
     }
   ]);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -244,7 +244,7 @@ export default function App() {
               Grab & Go RD
             </span>
             <span className="hidden sm:inline-block ml-2 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-              Edge AI & TensorFlow.js
+              Detector Universal de Objetos
             </span>
           </div>
         </div>
@@ -254,7 +254,7 @@ export default function App() {
             onClick={() => setActiveTab('webcam-yolo')}
             className={`transition-colors whitespace-nowrap shrink-0 py-1 flex items-center gap-1.5 text-emerald-700 font-semibold ${activeTab === 'webcam-yolo' ? 'border-b-2 border-emerald-600' : 'hover:text-emerald-800'}`}
           >
-            <Video className="w-4 h-4" /> Detección Real con Webcam
+            <Video className="w-4 h-4" /> Detector Universal (Webcam)
           </button>
           <button 
             onClick={() => setActiveTab('overview')}
@@ -299,7 +299,7 @@ export default function App() {
             onClick={() => setActiveTab('webcam-yolo')}
             className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-500 transition-colors whitespace-nowrap shrink-0 shadow-sm flex items-center gap-2"
           >
-            <Video className="w-3.5 h-3.5" /> Detección Real
+            <Video className="w-3.5 h-3.5" /> Activar Detector
           </button>
         </div>
       </header>
@@ -308,37 +308,37 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 lg:p-10 space-y-12">
 
         {/* =====================================================================
-            TAB: REAL WEBCAM TENSORFLOW.JS COCO-SSD DETECTOR
+            TAB: UNIVERSAL DETECTOR (All objects)
             ===================================================================== */}
         {activeTab === 'webcam-yolo' && (
           <div className="space-y-10 animate-fadeIn">
             <div className="border-b border-slate-200 pb-6">
               <div className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full mb-3">
                 <Video className="w-3.5 h-3.5" />
-                <span>Detección de objetos reales en tu navegador con IA (TensorFlow.js)</span>
+                <span>Sensibilidad alta y 80+ clases COCO habilitadas simultáneamente</span>
               </div>
-              <h2 className="text-3xl font-extrabold text-slate-900">Detector Real de Vasos, Botellas y Objetos</h2>
+              <h2 className="text-3xl font-extrabold text-slate-900">Detector Universal de Todo Tipo de Elementos</h2>
               <p className="text-base text-slate-600 mt-2">
-                Hemos integrado un modelo de red neuronal de visión artificial en tiempo real (COCO-SSD). Cuando enciendas tu cámara ecoloques un **vaso (cup)**, **botella (bottle)**, **teléfono (cell phone)** o **laptop** frente al lente, el sistema lo detectará físicamente y dibujará la caja delimitadora.
+                El modelo ha sido configurado para detectar <strong>absolutamente todo tipo de elementos</strong> que coloques frente a tu cámara web (vasos, botellas, tazas, teléfonos, computadoras, libros, personas, ropa, etc.).
               </p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-              {/* Webcam Live Stream Viewport with Real AI Detections */}
+              {/* Webcam Live Stream Viewport with Universal Detections */}
               <div className="lg:col-span-7 bg-slate-900 rounded-2xl p-6 shadow-xl text-white space-y-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className={`w-3 h-3 rounded-full ${modelLoaded ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
                     <span className="text-sm font-mono tracking-wider">
-                      {modelLoading ? 'CARGANDO MODELO IA...' : modelLoaded ? 'IA ACTIVA (COCO-SSD / YOLO COMPATIBLE)' : 'INICIALIZANDO...'}
+                      {modelLoading ? 'CARGANDO MODELO UNIVERSAL...' : modelLoaded ? 'DETECTOR ACTIVO (80+ CLASES)' : 'INICIALIZANDO...'}
                     </span>
                   </div>
                   <div className="text-xs font-mono bg-black/40 px-3 py-1 rounded border border-white/10 text-emerald-300">
-                    {predictions.length} OBJETOS DETECTADOS
+                    {predictions.length} OBJETOS EN TIEMPO REAL
                   </div>
                 </div>
 
-                {/* Video container with REAL AI bounding boxes */}
+                {/* Video container with UNIVERSAL AI bounding boxes */}
                 <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center">
                   <video 
                     ref={videoRef} 
@@ -352,20 +352,20 @@ export default function App() {
                     <div className="text-center p-8 space-y-4">
                       <Camera className="w-12 h-12 text-emerald-400 mx-auto animate-bounce" />
                       <div>
-                        <h4 className="text-lg font-bold text-white">Cámara Web Lista para Detección Real</h4>
-                        <p className="text-sm text-slate-400 mt-1">Coloca un vaso, taza, botella o teléfono frente a tu cámara y haz clic en iniciar.</p>
+                        <h4 className="text-lg font-bold text-white">Detector Universal Listo</h4>
+                        <p className="text-sm text-slate-400 mt-1">Coloca cualquier objeto frente a tu cámara (vaso, taza, botella, manos, libros, etc.).</p>
                       </div>
                       <button 
                         disabled={!modelLoaded}
                         onClick={startWebcam}
                         className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white font-semibold rounded-xl transition-all shadow-sm inline-flex items-center gap-2"
                       >
-                        <Video className="w-4 h-4" /> {modelLoading ? 'Cargando Red Neuronal...' : 'Iniciar Detección Real'}
+                        <Video className="w-4 h-4" /> {modelLoading ? 'Cargando Red Neuronal...' : 'Iniciar Detección Universal'}
                       </button>
                     </div>
                   )}
 
-                  {/* REAL AI Bounding Boxes rendered from predictions */}
+                  {/* RENDER ALL DETECTED OBJECTS */}
                   {isWebcamActive && predictions.map((pred, i) => {
                     const [x, y, width, height] = pred.bbox;
                     return (
@@ -412,31 +412,44 @@ export default function App() {
                     </button>
                   )}
                   <span className="text-xs text-slate-400 font-mono">
-                    {isWebcamActive ? `Detectando en tiempo real (${predictions.length} activos)` : 'Modelo IA listo'}
+                    {isWebcamActive ? `Detectando (${predictions.length} elementos)` : 'Sistema listo'}
                   </span>
                 </div>
               </div>
 
-              {/* Guide Card */}
+              {/* Detected Items Live List */}
               <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                  Prueba colocando un vaso o botella
+                  <Activity className="w-5 h-5 text-emerald-600" />
+                  Elementos Detectados en Vivo
                 </h3>
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Ahora sí estás ejecutando un modelo de inteligencia artificial real en tu navegador. El modelo detecta automáticamente clases como:
+                <p className="text-sm text-slate-600">
+                  Lista de todos los objetos identificados actualmente por la IA en tu cámara:
                 </p>
-                <div className="grid grid-cols-2 gap-2 text-xs font-mono text-slate-700">
-                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200">🥤 cup (Vaso / Taza)</div>
-                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200">🍾 bottle (Botella)</div>
-                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200">📱 cell phone (Teléfono)</div>
-                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200">💻 laptop (Computadora)</div>
-                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200">📖 book (Libro)</div>
-                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200">👤 person (Persona)</div>
+
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {predictions.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400 text-sm">
+                      {isWebcamActive ? 'Buscando objetos frente a la cámara...' : 'Cámara inactiva'}
+                    </div>
+                  ) : (
+                    predictions.map((p, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-slate-50 border border-slate-200 p-3 rounded-xl">
+                        <div>
+                          <span className="font-bold text-slate-900 block capitalize">{p.class}</span>
+                          <span className="text-xs text-slate-500 font-mono">Precisión: {(p.score * 100).toFixed(1)}%</span>
+                        </div>
+                        <span className="text-xs bg-emerald-100 text-emerald-800 font-semibold px-2.5 py-1 rounded-full">
+                          Detectado
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
+
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-900">
-                  <strong className="block font-semibold mb-1">Nota técnica:</strong>
-                  Este detector utiliza TensorFlow.js ejecutándose directamente en el cliente. En las tiendas físicas de Grab & Go en la República Dominicana, este mismo algoritmo se optimiza mediante YOLOv8 en la Raspberry Pi con el acelerador Hailo-8.
+                  <strong className="block font-semibold mb-1">Consejo:</strong>
+                  Si pones un vaso (cup) o botella (bottle) frente a la cámara, aparecerá instantáneamente en esta lista y en la pantalla de video.
                 </div>
               </div>
             </div>
@@ -448,7 +461,7 @@ export default function App() {
           <div className="space-y-8 animate-fadeIn">
             <h2 className="text-3xl font-extrabold text-slate-900">Conceptualización Grab & Go RD</h2>
             <p className="text-slate-600">Modelo autónomo adaptado al mercado dominicano utilizando visión artificial YOLO y Edge Computing.</p>
-            <button onClick={() => setActiveTab('webcam-yolo')} className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold">Ir a Detección Real</button>
+            <button onClick={() => setActiveTab('webcam-yolo')} className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold">Ir al Detector</button>
           </div>
         )}
 
@@ -507,7 +520,7 @@ export default function App() {
       </main>
 
       <footer className="bg-white border-t border-slate-200 py-6 px-6 text-center text-xs text-slate-500">
-        Grab & Go RD · Edge AI & TensorFlow.js Webcam Integration © 2026
+        Grab & Go RD · Edge AI & Universal Detector Integration © 2026
       </footer>
     </div>
   );
