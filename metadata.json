@@ -1,0 +1,6 @@
+{
+  "name": "Grab & Go RD - Edge AI Autonomous Retail",
+  "description": "Arquitectura de software y simulador de visión artificial (YOLO) en dispositivos Edge de bajo costo adaptado al mercado dominicano.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
