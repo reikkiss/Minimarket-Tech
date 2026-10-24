@@ -38,6 +38,9 @@ import {
   Code
 } from 'lucide-react';
 
+import * as tf from '@tensorflow/tfjs';
+import * as cocoSsd from '@tensorflow-models/coco-ssd';
+
 interface Product {
   id: string;
   name: string;
@@ -91,17 +94,32 @@ export default function App() {
   const [checkoutStep, setCheckoutStep] = useState<'idle' | 'scanning' | 'payment' | 'success'>('idle');
   const [selectedPayment, setSelectedPayment] = useState<'qik' | 'azul' | 'tiotap' | 'tarjeta'>('qik');
 
-  // Webcam YOLO Live State
+  // Real TensorFlow.js Webcam YOLO / COCO-SSD State
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isWebcamActive, setIsWebcamActive] = useState(false);
   const [webcamError, setWebcamError] = useState<string | null>(null);
-  
-  // Allow user to select what object category they want YOLO to simulate detecting in front of their webcam
-  const [selectedObjectCategory, setSelectedObjectCategory] = useState<'everyday' | 'dominican' | 'custom'>('everyday');
-  const [customObjectName, setCustomObjectName] = useState('Mi Objeto Personalizado');
-  const [detectedObjects, setDetectedObjects] = useState<{ label: string; confidence: number; box: string }[]>([
-    { label: 'cell_phone (Objeto detectado)', confidence: 0.96, box: '[150, 100, 220, 300]' }
-  ]);
+  const [modelLoading, setModelLoading] = useState(false);
+  const [modelLoaded, setModelLoaded] = useState(false);
+  const [predictions, setPredictions] = useState<cocoSsd.DetectedObject[]>([]);
+  const modelRef = useRef<cocoSsd.ObjectDetection | null>(null);
+
+  // Load TensorFlow COCO-SSD model once
+  useEffect(() => {
+    async function loadCocoModel() {
+      try {
+        setModelLoading(true);
+        await tf.ready();
+        const loadedModel = await cocoSsd.load();
+        modelRef.current = loadedModel;
+        setModelLoaded(true);
+      } catch (err) {
+        console.error('Error loading TensorFlow model:', err);
+      } finally {
+        setModelLoading(false);
+      }
+    }
+    loadCocoModel();
+  }, []);
 
   const startWebcam = async () => {
     try {
@@ -122,47 +140,39 @@ export default function App() {
       stream.getTracks().forEach(track => track.stop());
       videoRef.current.srcObject = null;
       setIsWebcamActive(false);
+      setPredictions([]);
     }
   };
 
-  // Update simulated detections based on category chosen by user
+  // Real-time detection loop using requestAnimationFrame
   useEffect(() => {
-    let interval: any;
-    if (isWebcamActive) {
-      interval = setInterval(() => {
-        let pool = [];
-        if (selectedObjectCategory === 'everyday') {
-          pool = [
-            { label: 'cell_phone (Teléfono / Móvil)', confidence: 0.95 + Math.random() * 0.04 },
-            { label: 'laptop / computer', confidence: 0.92 + Math.random() * 0.06 },
-            { label: 'cup / bottle (Vaso / Taza)', confidence: 0.94 + Math.random() * 0.05 },
-            { label: 'book / notebook', confidence: 0.89 + Math.random() * 0.08 }
-          ];
-        } else if (selectedObjectCategory === 'dominican') {
-          pool = [
-            { label: 'presidente_bottle (Cerveza Presidente)', confidence: 0.96 + Math.random() * 0.03 },
-            { label: 'cafe_sd_pack (Café Santo Domingo)', confidence: 0.93 + Math.random() * 0.06 },
-            { label: 'salami_induveca (Salami Induveca)', confidence: 0.97 + Math.random() * 0.02 },
-            { label: 'platano_verde (Plátanos)', confidence: 0.90 + Math.random() * 0.08 }
-          ];
-        } else {
-          pool = [
-            { label: `${customObjectName} (Custom YOLO Class)`, confidence: 0.98 + Math.random() * 0.01 }
-          ];
+    let animationId: number;
+    async function detectFrame() {
+      if (modelRef.current && videoRef.current && videoRef.current.readyState === 4 && isWebcamActive) {
+        try {
+          const preds = await modelRef.current.detect(videoRef.current);
+          setPredictions(preds);
+        } catch (e) {
+          console.error('Detection error:', e);
         }
-        const chosen = pool.sort(() => 0.5 - Math.random()).slice(0, 1);
-        setDetectedObjects(chosen.map(c => ({ ...c, box: '[140, 90, 200, 320]' })));
-      }, 1200);
+      }
+      if (isWebcamActive) {
+        animationId = requestAnimationFrame(detectFrame);
+      }
     }
-    return () => clearInterval(interval);
-  }, [isWebcamActive, selectedObjectCategory, customObjectName]);
+
+    if (isWebcamActive && modelLoaded) {
+      detectFrame();
+    }
+    return () => cancelAnimationFrame(animationId);
+  }, [isWebcamActive, modelLoaded]);
 
   // AI Advisor State
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiResponses, setAiResponses] = useState<{ role: 'user' | 'assistant'; text: string }[]>([
     { 
       role: 'assistant', 
-      text: 'Hola. Como experto en YOLO y OpenCV, te explico: para que YOLO reconozca objetos reales que tienes en casa o en tu tienda, necesitas entrenar el modelo con un dataset personalizado de fotos de esos objetos (usando herramientas como Roboflow o Ultralytics con tus propias imágenes).' 
+      text: 'Hola. He integrado TensorFlow.js (COCO-SSD) directamente en tu navegador para que, cuando pongas un vaso (cup), una botella (bottle), un teléfono (cell phone) o una laptop frente a tu cámara web, el sistema lo detecte y dibuje cajas delimitadoras reales en tiempo real.' 
     }
   ]);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -234,7 +244,7 @@ export default function App() {
               Grab & Go RD
             </span>
             <span className="hidden sm:inline-block ml-2 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-              Edge AI & OpenCV
+              Edge AI & TensorFlow.js
             </span>
           </div>
         </div>
@@ -244,7 +254,7 @@ export default function App() {
             onClick={() => setActiveTab('webcam-yolo')}
             className={`transition-colors whitespace-nowrap shrink-0 py-1 flex items-center gap-1.5 text-emerald-700 font-semibold ${activeTab === 'webcam-yolo' ? 'border-b-2 border-emerald-600' : 'hover:text-emerald-800'}`}
           >
-            <Video className="w-4 h-4" /> YOLO con mi Webcam
+            <Video className="w-4 h-4" /> Detección Real con Webcam
           </button>
           <button 
             onClick={() => setActiveTab('overview')}
@@ -289,7 +299,7 @@ export default function App() {
             onClick={() => setActiveTab('webcam-yolo')}
             className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-500 transition-colors whitespace-nowrap shrink-0 shadow-sm flex items-center gap-2"
           >
-            <Video className="w-3.5 h-3.5" /> Activar Webcam YOLO
+            <Video className="w-3.5 h-3.5" /> Detección Real
           </button>
         </div>
       </header>
@@ -298,78 +308,37 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 lg:p-10 space-y-12">
 
         {/* =====================================================================
-            TAB: WEBCAM LOCAL YOLO (Interactive Configurator & Detector)
+            TAB: REAL WEBCAM TENSORFLOW.JS COCO-SSD DETECTOR
             ===================================================================== */}
         {activeTab === 'webcam-yolo' && (
           <div className="space-y-10 animate-fadeIn">
             <div className="border-b border-slate-200 pb-6">
               <div className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full mb-3">
                 <Video className="w-3.5 h-3.5" />
-                <span>Selector dinámico de clases YOLO para tu cámara web</span>
+                <span>Detección de objetos reales en tu navegador con IA (TensorFlow.js)</span>
               </div>
-              <h2 className="text-3xl font-extrabold text-slate-900">YOLO & OpenCV con tu Cámara Web</h2>
+              <h2 className="text-3xl font-extrabold text-slate-900">Detector Real de Vasos, Botellas y Objetos</h2>
               <p className="text-base text-slate-600 mt-2">
-                Como los elementos predeterminados quizás no coincidan con lo que tienes enfrente, aquí puedes elegir qué tipo de objetos deseas que YOLO detecte en tu cámara (objetos comunes de oficina/hogar, productos dominicanos, o un objeto personalizado).
+                Hemos integrado un modelo de red neuronal de visión artificial en tiempo real (COCO-SSD). Cuando enciendas tu cámara ecoloques un **vaso (cup)**, **botella (bottle)**, **teléfono (cell phone)** o **laptop** frente al lente, el sistema lo detectará físicamente y dibujará la caja delimitadora.
               </p>
             </div>
 
-            {/* Object Category Switcher */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-              <label className="text-sm font-bold text-slate-900 block">Selecciona el perfil de detección YOLO para tu cámara:</label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <button
-                  onClick={() => setSelectedObjectCategory('everyday')}
-                  className={`p-4 rounded-xl border text-left transition-all ${selectedObjectCategory === 'everyday' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 font-semibold ring-2 ring-emerald-600/20' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
-                >
-                  <div className="text-base font-bold mb-1">Objetos Cotidianos (COCO Dataset)</div>
-                  <div className="text-xs text-slate-500">Detecta teléfonos, laptops, tazas, libros, botellas que tengas en tu escritorio.</div>
-                </button>
-
-                <button
-                  onClick={() => setSelectedObjectCategory('dominican')}
-                  className={`p-4 rounded-xl border text-left transition-all ${selectedObjectCategory === 'dominican' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 font-semibold ring-2 ring-emerald-600/20' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
-                >
-                  <div className="text-base font-bold mb-1">Productos Dominicanos (Custom)</div>
-                  <div className="text-xs text-slate-500">Simula la detección de Cerveza Presidente, Café Santo Domingo, Salami y Plátanos.</div>
-                </button>
-
-                <button
-                  onClick={() => setSelectedObjectCategory('custom')}
-                  className={`p-4 rounded-xl border text-left transition-all ${selectedObjectCategory === 'custom' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 font-semibold ring-2 ring-emerald-600/20' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
-                >
-                  <div className="text-base font-bold mb-1">Objeto Personalizado</div>
-                  <div className="text-xs text-slate-500">Escribe el nombre del objeto específico que tienes frente a tu cámara.</div>
-                </button>
-              </div>
-
-              {selectedObjectCategory === 'custom' && (
-                <div className="pt-3 flex gap-3 items-center">
-                  <input 
-                    type="text"
-                    value={customObjectName}
-                    onChange={(e) => setCustomObjectName(e.target.value)}
-                    placeholder="Ej: Mi termo de café, mi billetera, etc."
-                    className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-slate-900"
-                  />
-                  <span className="text-xs text-slate-500 font-mono">Clase YOLO personalizada</span>
-                </div>
-              )}
-            </div>
-
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-              {/* Webcam Live Stream Viewport */}
+              {/* Webcam Live Stream Viewport with Real AI Detections */}
               <div className="lg:col-span-7 bg-slate-900 rounded-2xl p-6 shadow-xl text-white space-y-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span className="text-sm font-mono tracking-wider">WEBCAM LOCAL FEED (cv2.VideoCapture(0))</span>
+                    <span className={`w-3 h-3 rounded-full ${modelLoaded ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                    <span className="text-sm font-mono tracking-wider">
+                      {modelLoading ? 'CARGANDO MODELO IA...' : modelLoaded ? 'IA ACTIVA (COCO-SSD / YOLO COMPATIBLE)' : 'INICIALIZANDO...'}
+                    </span>
                   </div>
                   <div className="text-xs font-mono bg-black/40 px-3 py-1 rounded border border-white/10 text-emerald-300">
-                    PERFIL: {selectedObjectCategory.toUpperCase()}
+                    {predictions.length} OBJETOS DETECTADOS
                   </div>
                 </div>
 
-                {/* Video container with simulated YOLO bounding boxes */}
+                {/* Video container with REAL AI bounding boxes */}
                 <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center">
                   <video 
                     ref={videoRef} 
@@ -381,37 +350,41 @@ export default function App() {
                   
                   {!isWebcamActive && (
                     <div className="text-center p-8 space-y-4">
-                      <Camera className="w-12 h-12 text-slate-500 mx-auto animate-bounce" />
+                      <Camera className="w-12 h-12 text-emerald-400 mx-auto animate-bounce" />
                       <div>
-                        <h4 className="text-lg font-bold text-white">Cámara Web Inactiva</h4>
-                        <p className="text-sm text-slate-400 mt-1">Haz clic en el botón inferior para activar tu cámara web y probar la detección.</p>
+                        <h4 className="text-lg font-bold text-white">Cámara Web Lista para Detección Real</h4>
+                        <p className="text-sm text-slate-400 mt-1">Coloca un vaso, taza, botella o teléfono frente a tu cámara y haz clic en iniciar.</p>
                       </div>
                       <button 
+                        disabled={!modelLoaded}
                         onClick={startWebcam}
-                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-all shadow-sm inline-flex items-center gap-2"
+                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white font-semibold rounded-xl transition-all shadow-sm inline-flex items-center gap-2"
                       >
-                        <Video className="w-4 h-4" /> Iniciar Cámara Web
+                        <Video className="w-4 h-4" /> {modelLoading ? 'Cargando Red Neuronal...' : 'Iniciar Detección Real'}
                       </button>
                     </div>
                   )}
 
-                  {/* Simulated YOLO Bounding Boxes Overlay when active */}
-                  {isWebcamActive && detectedObjects.map((obj, i) => (
-                    <div 
-                      key={i} 
-                      className="absolute border-2 border-emerald-400 bg-emerald-500/10 p-2 rounded pointer-events-none transition-all duration-500"
-                      style={{
-                        top: '25%',
-                        left: '25%',
-                        width: '260px',
-                        height: '140px'
-                      }}
-                    >
-                      <div className="bg-emerald-600 text-white text-xs font-mono px-2 py-0.5 rounded inline-block shadow">
-                        {obj.label} ({(obj.confidence * 100).toFixed(1)}%)
+                  {/* REAL AI Bounding Boxes rendered from predictions */}
+                  {isWebcamActive && predictions.map((pred, i) => {
+                    const [x, y, width, height] = pred.bbox;
+                    return (
+                      <div 
+                        key={i} 
+                        className="absolute border-2 border-emerald-400 bg-emerald-500/20 rounded pointer-events-none transition-all duration-75"
+                        style={{
+                          left: `${(x / 640) * 100}%`,
+                          top: `${(y / 480) * 100}%`,
+                          width: `${(width / 640) * 100}%`,
+                          height: `${(height / 480) * 100}%`,
+                        }}
+                      >
+                        <div className="bg-emerald-600 text-white text-[11px] font-mono px-1.5 py-0.5 rounded absolute -top-6 left-0 shadow whitespace-nowrap">
+                          {pred.class} ({(pred.score * 100).toFixed(0)}%)
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {webcamError && (
@@ -431,46 +404,39 @@ export default function App() {
                     </button>
                   ) : (
                     <button 
+                      disabled={!modelLoaded}
                       onClick={startWebcam}
-                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-all text-sm"
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white font-semibold rounded-xl transition-all text-sm"
                     >
                       Activar Cámara
                     </button>
                   )}
                   <span className="text-xs text-slate-400 font-mono">
-                    {isWebcamActive ? 'Inferencia YOLO en curso (~45 FPS)' : 'Esperando activación'}
+                    {isWebcamActive ? `Detectando en tiempo real (${predictions.length} activos)` : 'Modelo IA listo'}
                   </span>
                 </div>
               </div>
 
-              {/* Explanation & Python Code Card */}
+              {/* Guide Card */}
               <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <Code className="w-5 h-5 text-emerald-600" />
-                  ¿Cómo entrenar YOLO para tus propios objetos?
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  Prueba colocando un vaso o botella
                 </h3>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  Si deseas que OpenCV y YOLO reconozcan exactamente los objetos que tienes en tu casa o negocio (por ejemplo, tu marca de café o tus productos), debes seguir estos 3 pasos con Python:
+                  Ahora sí estás ejecutando un modelo de inteligencia artificial real en tu navegador. El modelo detecta automáticamente clases como:
                 </p>
-
-                <div className="space-y-3 text-xs text-slate-700">
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                    <strong className="text-slate-900 block mb-1">1. Capturar Dataset (Dataset Collection)</strong>
-                    Toma entre 50 y 200 fotos de tu objeto desde diferentes ángulos utilizando tu propia cámara web o celular.
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                    <strong className="text-slate-900 block mb-1">2. Etiquetar (Annotation con Roboflow)</strong>
-                    Sube las fotos a <span className="font-semibold text-emerald-700">Roboflow</span> o LabelImg y dibuja cajas alrededor de tu objeto.
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                    <strong className="text-slate-900 block mb-1">3. Entrenar YOLOv8 en Python</strong>
-                    Ejecuta este comando en Python para entrenar tu modelo personalizado:
-                    <div className="bg-slate-900 text-emerald-400 font-mono p-2 rounded mt-2 text-[11px]">
-                      from ultralytics import YOLO<br/>
-                      model = YOLO('yolov8n.pt')<br/>
-                      model.train(data='tu_dataset.yaml', epochs=50)
-                    </div>
-                  </div>
+                <div className="grid grid-cols-2 gap-2 text-xs font-mono text-slate-700">
+                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200">🥤 cup (Vaso / Taza)</div>
+                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200">🍾 bottle (Botella)</div>
+                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200">📱 cell phone (Teléfono)</div>
+                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200">💻 laptop (Computadora)</div>
+                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200">📖 book (Libro)</div>
+                  <div className="bg-slate-50 p-2.5 rounded border border-slate-200">👤 person (Persona)</div>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-900">
+                  <strong className="block font-semibold mb-1">Nota técnica:</strong>
+                  Este detector utiliza TensorFlow.js ejecutándose directamente en el cliente. En las tiendas físicas de Grab & Go en la República Dominicana, este mismo algoritmo se optimiza mediante YOLOv8 en la Raspberry Pi con el acelerador Hailo-8.
                 </div>
               </div>
             </div>
@@ -482,7 +448,7 @@ export default function App() {
           <div className="space-y-8 animate-fadeIn">
             <h2 className="text-3xl font-extrabold text-slate-900">Conceptualización Grab & Go RD</h2>
             <p className="text-slate-600">Modelo autónomo adaptado al mercado dominicano utilizando visión artificial YOLO y Edge Computing.</p>
-            <button onClick={() => setActiveTab('webcam-yolo')} className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold">Ir a YOLO con Webcam</button>
+            <button onClick={() => setActiveTab('webcam-yolo')} className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold">Ir a Detección Real</button>
           </div>
         )}
 
@@ -524,7 +490,7 @@ export default function App() {
                 </div>
               ))}
               <form onSubmit={handleAiSubmit} className="flex gap-2 pt-2">
-                <input value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} placeholder="Pregunta sobre YOLO o entrenamiento..." className="flex-1 border px-3 py-2 rounded-xl text-sm" />
+                <input value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} placeholder="Pregunta sobre IA o visión artificial..." className="flex-1 border px-3 py-2 rounded-xl text-sm" />
                 <button type="submit" className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm">Enviar</button>
               </form>
             </div>
@@ -541,7 +507,7 @@ export default function App() {
       </main>
 
       <footer className="bg-white border-t border-slate-200 py-6 px-6 text-center text-xs text-slate-500">
-        Grab & Go RD · Edge AI & OpenCV Webcam Integration © 2026
+        Grab & Go RD · Edge AI & TensorFlow.js Webcam Integration © 2026
       </footer>
     </div>
   );
